@@ -29,3 +29,52 @@ Instala Pygame con:
 
 ```bash
 pip install pygame
+ Cómo jugar
+
+Clona o descarga el repositorio.
+
+Ejecuta el juego:
+
+python "gta mini.py"
+
+
+Controles:
+
+Tecla	Acción
+W/A/S/D o flechas	Mover jugador
+Mouse	Apuntar
+Click izquierdo	Disparar
+1/2	Cambiar arma
+E	Entrar/salir de vehículo
+M	Mostrar/ocultar minimapa
+Q	Iniciar misión de robar auto
+K	Guardar partida
+L	Cargar partida
+ESC	Salir del juego
+ Guardar y cargar
+
+Guardar: presiona K
+
+Cargar: presiona L
+Se guarda un archivo savegame.json con la posición del jugador, salud y dinero.
+
+ Estructura del proyecto
+gta-mini/
+│
+├─ gta mini.py        # Código principal del juego
+├─ assets/            # Carpeta para sonidos, imágenes u otros assets
+└─ savegame.json      # Archivo generado al guardar partida
+
+ Mejoras futuras
+
+IA policial avanzada con patrullas.
+
+Nuevas armas y munición.
+
+Vehículos adicionales y mejoras en físicas.
+
+Misiones más complejas estilo GTA moderno.
+
+ Licencia
+
+Este proyecto es libre para uso educativo y personal. No comercializar sin permiso del autor.
