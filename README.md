@@ -1,4 +1,4 @@
-# GTA Mini
+z# GTA Mini
 
 **GTA Mini** es un juego en Python con Pygame inspirado en la saga Grand Theft Auto.  
 Permite conducir vehículos, robar autos, disparar armas, y enfrentarse a policías en un mapa grande.
