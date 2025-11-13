@@ -1,6 +1,6 @@
-# gta_full.py - Mini GTA completo (Pygame)
+# gta_full_v5.py - Mini GTA completo (Pygame)
+# NOVEDADES: Estilo visual Retro (GTA 2) (v7)
 # Requisitos: Python 3.8+, pygame
-# Coloca opcionalmente sprites/sonidos en ./assets/ con nombres indicados.
 
 import pygame
 import os
@@ -56,42 +56,66 @@ def safe_load_sound(name):
 # ------------------ Configuración de ventana / mapa ------------------
 WIDTH, HEIGHT = 1280, 720
 SCREEN = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Mini GTA — Full")
+pygame.display.set_caption("Mini GTA — Full V7 (Estilo GTA 2)")
 CLOCK = pygame.time.Clock()
-FONT = pygame.font.SysFont(None, 20)
-BIG = pygame.font.SysFont(None, 28)
+# FONT para un aspecto más grueso y legible
+FONT = pygame.font.SysFont("Courier New", 20, bold=True)
+BIG = pygame.font.SysFont("Courier New", 28, bold=True)
 
-MAP_W, MAP_H = 3500, 2700
+MAP_W, MAP_H = 4000, 3000 
+CITY_BLOCK_SIZE = 500 
 
 # ------------------ Sprites / sonidos (opcionales) ------------------
-PLAYER_IMG = safe_load_image("player.png", (44,44), (240,240,240))
-CAR_IMG = safe_load_image("car.png", (72,44), (130,130,220))
-POLICE_IMG = safe_load_image("police.png", (48,48), (220,80,80))
-BULLET_IMG = safe_load_image("bullet.png", (8,8), (255,220,80))
-BUILDING_IMG = safe_load_image("building.png", (120,120), (110,110,110))
+# Colores predeterminados para fallback (más oscuros para el nuevo estilo)
+PLAYER_IMG = safe_load_image("player.png", (44,44), (200,200,200)) # Gris claro
+CAR_IMG = safe_load_image("car.png", (72,44), (80,80,180)) # Azul oscuro
+POLICE_IMG = safe_load_image("police.png", (72,44), (180,60,60)) # Rojo ladrillo
+BULLET_IMG = safe_load_image("bullet.png", (8,8), (255,160,0)) # Naranja brillante
+EXPLOSION_IMG = safe_load_image("explosion.png", (64,64), (255,165,0))
 
 SND_SHOOT = safe_load_sound("shoot.wav")
+SND_RELOAD = safe_load_sound("reload.wav") 
 SND_ENTER = safe_load_sound("enter.wav")
 SND_WANTED = safe_load_sound("wanted.wav")
 SND_ENGINE = safe_load_sound("engine.wav")
+SND_EXPLOSION = safe_load_sound("explosion.wav")
+SND_HEAL = safe_load_sound("heal.wav") 
 
-# ------------------ Colores y parámetros ------------------
-GRASS = (34,120,40)
-ROAD = (84,84,84)
-BUILDING_COL = (36,34,34)
-PLAYER_COLOR = (30,150,220)
-CAR_COLOR = (200,50,50)
-POLICE_COLOR = (40,120,220)
+# ------------------ Colores y parámetros (Estilo GTA 2) ------------------
+GRASS = (18, 55, 20)      # Pasto muy oscuro
+ROAD = (30, 30, 30)       # Asfalto casi negro
+PAVEMENT_COL = (60, 60, 60) # Aceras de hormigón oscuro
 WHITE = (255,255,255)
 BLACK = (0,0,0)
-BULLET_COLOR = (255,220,80)
+
+# Colores de HUD estilo neón/retro
+HUD_TEXT_COLOR = (255, 255, 50) # Amarillo neón
+HUD_WANTED_COLOR = (255, 50, 50) # Rojo intenso
+HUD_MONEY_COLOR = (50, 255, 50) # Verde brillante
+WINDOW_LIGHT = (255, 230, 150) # Luz cálida para ventanas
+POLICE_COLOR = (200, 50, 50) # Color uniforme para policía
+
+# Paleta de colores de edificios variados 
+BUILDING_PALETTE = [
+    (50, 50, 50),      # Gris oscuro (Hormigón)
+    (100, 100, 100),   # Gris medio
+    (120, 80, 50),     # Marrón oscuro (Ladrillo)
+    (50, 70, 90),      # Azul petróleo (Acero/Vidrio oscuro)
+    (160, 160, 160)    # Blanco sucio
+]
 
 # Gameplay params
-NUM_CARS = 45
-NUM_NPCS = 90
-NUM_POLICE_PEOPLE = 18
-NUM_POLICE_CARS = 8
+NUM_CARS = 60
+NUM_NPCS = 120
+NUM_POLICE_PEOPLE = 25
+NUM_POLICE_CARS = 12
 MAX_WANTED = 5
+
+# Definición de armas con capacidades de munición máxima y cargador
+WEAPONS_DATA = {
+    0: {"name": "PISTOL", "mag_size": 15, "max_ammo": 150, "damage": 35, "cooldown": 0.18},
+    1: {"name": "SHOTGUN", "mag_size": 6, "max_ammo": 30, "damage": 18, "cooldown": 0.9}
+}
 
 # ------------------ Utilidades ------------------
 def clamp(v,a,b): return max(a, min(v, b))
@@ -117,49 +141,171 @@ camera = Camera(WIDTH, HEIGHT)
 class World:
     def __init__(self):
         self.roads = []
-        # grid roads
-        for y in range(200, MAP_H, 400):
-            self.roads.append(pygame.Rect(0,y,MAP_W,100))
-        for x in range(200, MAP_W, 400):
-            self.roads.append(pygame.Rect(x,0,100,MAP_H))
-        # buildings random but not on roads center
         self.buildings = []
-        for _ in range(160):
-            bw = random.randint(80,220); bh = random.randint(80,220)
-            bx = random.randint(0, MAP_W - bw)
-            by = random.randint(0, MAP_H - bh)
-            rect = pygame.Rect(bx,by,bw,bh)
-            # avoid big overlap with roads - simple check
-            ok = True
-            for r in self.roads:
-                if rect.colliderect(r.inflate(30,30)):
-                    ok = False; break
-            if ok:
-                self.buildings.append(rect)
-        # add some large blocks
-        for cx in range(800, 2400, 700):
-            self.buildings.append(pygame.Rect(cx, 600, 300, 400))
+        self.pavements = [] 
+        self.generate_city_grid()
+
+    def generate_city_grid(self):
+        road_width = 100
+        pavement_width = 15 
+        
+        # 1. Crear la rejilla de carreteras y aceras
+        for i in range(0, MAP_W // CITY_BLOCK_SIZE):
+            x = i * CITY_BLOCK_SIZE + road_width / 2
+            # Carretera Vertical
+            self.roads.append(pygame.Rect(x - road_width / 2, 0, road_width, MAP_H))
+            # Aceras Verticales
+            self.pavements.append(pygame.Rect(x - road_width / 2, 0, pavement_width, MAP_H))
+            self.pavements.append(pygame.Rect(x + road_width / 2 - pavement_width, 0, pavement_width, MAP_H))
+
+        for j in range(0, MAP_H // CITY_BLOCK_SIZE):
+            y = j * CITY_BLOCK_SIZE + road_width / 2
+            # Carretera Horizontal
+            self.roads.append(pygame.Rect(0, y - road_width / 2, MAP_W, road_width))
+            # Aceras Horizontales
+            self.pavements.append(pygame.Rect(0, y - road_width / 2, MAP_W, pavement_width))
+            self.pavements.append(pygame.Rect(0, y + road_width / 2 - pavement_width, MAP_W, pavement_width))
+
+        # 2. Generar edificios dentro de las manzanas (sin solaparse con aceras)
+        building_margin = 10 
+        
+        for i in range(MAP_W // CITY_BLOCK_SIZE):
+            for j in range(MAP_H // CITY_BLOCK_SIZE):
+                
+                block_x = i * CITY_BLOCK_SIZE + road_width
+                block_y = j * CITY_BLOCK_SIZE + road_width
+                block_w = CITY_BLOCK_SIZE - road_width
+                block_h = CITY_BLOCK_SIZE - road_width
+                
+                current_x = block_x + building_margin
+                current_y = block_y + building_margin
+                max_x = block_x + block_w - building_margin
+                max_y = block_y + block_h - building_margin
+                
+                while current_y < max_y:
+                    current_x = block_x + building_margin
+                    while current_x < max_x:
+                        
+                        # VARIACIÓN DE ESTRUCTURAS (más GTA 2: muy variadas)
+                        r = random.random()
+                        if r < 0.3: # Rascacielos/Torre (delgado y mediano-grande)
+                            bw = random.randint(30, 80)
+                            bh = random.randint(30, 80)
+                            b_type = 'office'
+                        elif r < 0.6: # Almacén/Comercial (largo y bajo)
+                            bw = random.randint(80, 150)
+                            bh = random.randint(40, 80)
+                            b_type = 'shop'
+                        else: # Estándar/Residencial
+                            bw = random.randint(50, 120)
+                            bh = random.randint(50, 120)
+                            b_type = 'residence'
+                        
+                        bw = min(bw, max_x - current_x)
+                        bh = min(bh, max_y - current_y)
+                        
+                        if bw >= 20 and bh >= 20: 
+                            rect = pygame.Rect(current_x, current_y, bw, bh)
+                            color = random.choice(BUILDING_PALETTE)
+                            self.buildings.append({'rect': rect, 'color': color, 'type': b_type})
+                            current_x += bw + building_margin
+                        else:
+                            break 
+                    current_y += random.randint(30, 80) + building_margin 
+                    
+                    if current_y > max_y and current_y < max_y + 40: 
+                        current_y = max_y
+
     def draw(self, surf, cam):
         surf.fill(GRASS)
+        
+        # 1. Draw Roads
         for r in self.roads:
             sx,sy = cam.to_screen((r.x, r.y))
             pygame.draw.rect(surf, ROAD, (sx, sy, r.w, r.h))
-        # buildings
-        for b in self.buildings:
+            
+            # Detalle de Carreteras (líneas amarillas)
+            if r.w > r.h: # Horizontal
+                center_y = sy + r.h / 2
+                # Dibuja la línea central discontinua
+                start_x = (cam.x % 60) - 60 
+                for i in range(int(WIDTH / 60) + 2):
+                    line_x = 0 + i * 60 - start_x
+                    if sx < line_x < sx + r.w:
+                         pygame.draw.rect(surf, (255, 160, 0), (line_x, center_y - 2, 30, 4)) # Naranja retro
+            else: # Vertical
+                center_x = sx + r.w / 2
+                start_y = (cam.y % 60) - 60 
+                for i in range(int(HEIGHT / 60) + 2):
+                    line_y = 0 + i * 60 - start_y
+                    if sy < line_y < sy + r.h:
+                        pygame.draw.rect(surf, (255, 160, 0), (center_x - 2, line_y, 4, 30))
+        
+        # 2. Draw Pavements (Aceras)
+        for p in self.pavements:
+            sx,sy = cam.to_screen((p.x, p.y))
+            pygame.draw.rect(surf, PAVEMENT_COL, (sx, sy, p.w, p.h))
+            # Borde negro/oscuro para definir
+            pygame.draw.rect(surf, BLACK, (sx, sy, p.w, p.h), 1)
+
+        # 3. Draw Buildings (Estructuras Variadas con Efecto 3D)
+        shadow_depth = 4 # Profundidad de la sombra
+        
+        for b_data in self.buildings:
+            b = b_data['rect']
             sx,sy = cam.to_screen((b.x,b.y))
-            # draw image tiled if available small; else rect
-            try:
-                surf.blit(pygame.transform.smoothscale(BUILDING_IMG, (b.w, b.h)), (sx,sy))
-            except:
-                pygame.draw.rect(surf, BUILDING_COL, (sx,sy,b.w,b.h))
+            
+            color = b_data['color']
+            darker_color = tuple(max(0, c - 20) for c in color)
+            lighter_color = tuple(min(255, c + 20) for c in color)
+
+            # 3.1 Dibujar la Sombra (efecto 3D)
+            pygame.draw.rect(surf, darker_color, (sx + shadow_depth, sy + shadow_depth, b.w, b.h))
+            
+            # 3.2 Dibujar el Cuerpo Principal
+            pygame.draw.rect(surf, color, (sx,sy,b.w,b.h))
+            
+            # 3.3 Detalle de Fachada/Ventanas
+            window_color = WINDOW_LIGHT
+            
+            if b_data['type'] == 'office':
+                # Patrón de rejilla (ventanas de oficina)
+                window_size = 6; gap = 6
+                for wx in range(gap, b.w - gap, window_size + gap):
+                    for wy in range(gap, b.h - gap, window_size + gap):
+                        w_sx = sx + wx; w_sy = sy + wy
+                        pygame.draw.rect(surf, window_color, (w_sx, w_sy, window_size, window_size))
+            
+            elif b_data['type'] == 'shop':
+                # Fachada de tienda (una ventana grande)
+                pygame.draw.rect(surf, (150, 20, 20), (sx, sy, b.w, 8)) # Toldo/Techo rojo
+                pygame.draw.rect(surf, (50, 50, 50), (sx + 5, sy + 10, b.w - 10, b.h - 15)) # Ventana (oscura)
+                
+            else: # residence
+                # Patrón de ventanas pequeño y espaciado (residencial)
+                window_size = 4; gap = 12
+                for wx in range(gap, b.w - gap, window_size + gap):
+                    for wy in range(gap, b.h - gap, window_size + gap):
+                        w_sx = sx + wx; w_sy = sy + wy
+                        pygame.draw.rect(surf, window_color, (w_sx, w_sy, window_size, window_size))
+
+            # 3.4 Borde superior para efecto de luz
+            pygame.draw.rect(surf, lighter_color, (sx, sy, b.w, 1))
+            pygame.draw.rect(surf, lighter_color, (sx, sy, 1, b.h))
+            
+            # 3.5 Borde negro final
+            pygame.draw.rect(surf, BLACK, (sx,sy,b.w,b.h), 1)
+                
     def collides_building(self, rect):
-        for b in self.buildings:
-            if rect.colliderect(b):
+        for b_data in self.buildings:
+            # Colisiona con el área del edificio, ignorando el efecto 3D
+            if rect.colliderect(b_data['rect']):
                 return True
         return False
 
 # ------------------ Player ------------------
 class Player:
+    # (Player class remains mostly the same, only adjusted weapon names and colors)
     def __init__(self,x,y):
         self.x = x; self.y = y
         self.w = 36; self.h = 44
@@ -168,15 +314,32 @@ class Player:
         self.in_vehicle = None
         self.health = 100
         self.weapon = 0
-        self.ammo = [80,12]  # pistol, shotgun
+        
+        self.ammo_in_mag = [WEAPONS_DATA[0]["mag_size"], 0]
+        self.ammo_total = [WEAPONS_DATA[0]["max_ammo"], WEAPONS_DATA[1]["max_ammo"]]
+        
         self.fire_cooldown = 0
-        self.money = 0
-        # image rect
+        self.reload_timer = 0 
+        self.money = 1000 
+        self.alive = True
         self.image = PLAYER_IMG
         self.rect = pygame.Rect(self.x - self.w//2, self.y - self.h//2, self.w, self.h)
+        
+    def get_current_weapon_data(self):
+        return WEAPONS_DATA[self.weapon]
+    
     def update(self, keys, dt):
+        if not self.alive: return
+        
+        if self.reload_timer > 0:
+            self.reload_timer -= dt
+            if self.reload_timer <= 0:
+                self.complete_reload()
+            return 
+        
         if self.in_vehicle:
             return
+        
         dx = dy = 0
         if keys[pygame.K_w] or keys[pygame.K_UP]: dy -= 1
         if keys[pygame.K_s] or keys[pygame.K_DOWN]: dy += 1
@@ -189,40 +352,118 @@ class Player:
             new_rect = pygame.Rect(nx - self.w//2, ny - self.h//2, self.w, self.h)
             if not GAME.world.collides_building(new_rect):
                 self.x = nx; self.y = ny
-        # clamp
+                
         self.x = clamp(self.x, 5, MAP_W-5); self.y = clamp(self.y, 5, MAP_H-5)
         self.rect.topleft = (self.x - self.w//2, self.y - self.h//2)
+
+    def start_reload(self):
+        if not self.alive or self.in_vehicle: return
+        if self.reload_timer > 0:
+            GAME.message("Already reloading.")
+            return
+
+        w_data = self.get_current_weapon_data()
+        w = self.weapon
+        mag = self.ammo_in_mag[w]
+        total = self.ammo_total[w]
+        mag_size = w_data["mag_size"]
+        
+        if mag == mag_size:
+            GAME.message("Magazine is full")
+            return
+        if total == 0:
+            GAME.message("No reserve ammo")
+            return
+            
+        needed = mag_size - mag
+        transfer = min(needed, total)
+        
+        if transfer > 0:
+            self.reload_timer = 2.0
+            GAME.message("RELOADING...", 2.1)
+            if SND_RELOAD: SND_RELOAD.play()
+        else:
+            GAME.message("Cannot reload")
+            
+    def complete_reload(self):
+        w_data = self.get_current_weapon_data()
+        w = self.weapon
+        mag = self.ammo_in_mag[w]
+        total = self.ammo_total[w]
+        mag_size = w_data["mag_size"]
+        
+        needed = mag_size - mag
+        transfer = min(needed, total)
+        
+        self.ammo_in_mag[w] += transfer
+        self.ammo_total[w] -= transfer
+        GAME.message("Reload complete!", 1.5)
+
+    def heal(self):
+        if not self.alive or self.in_vehicle:
+            GAME.message("Cannot heal right now.")
+            return
+        if self.health == 100:
+            GAME.message("Health is already full.")
+            return
+        if self.money < 100:
+            GAME.message("Need $100 for a medkit.")
+            return
+            
+        self.money -= 100
+        self.health = min(100, self.health + 50)
+        GAME.message("Healed 50 HP for $100.", 2.0)
+        if SND_HEAL: SND_HEAL.play()
+        if self.health <= 0:
+            self.alive = False
+            GAME.message("WASTED. Press [L] to reload last save, or ESC to quit.", 5.0)
+
     def draw(self, surf, cam):
+        if not self.alive: return
         sx,sy = cam.to_screen((self.x - self.w//2, self.y - self.h//2))
         try:
-            surf.blit(self.image, (sx,sy))
+            rotated = pygame.transform.rotate(self.image, -math.degrees(self.angle))
+            r = rotated.get_rect(center=(sx + self.w/2, sy + self.h/2))
+            surf.blit(rotated, r.topleft)
         except:
-            pygame.draw.rect(surf, PLAYER_COLOR, (sx,sy,self.w,self.h))
+            # Fallback a un círculo simple con color de alto contraste
+            pygame.draw.circle(surf, HUD_TEXT_COLOR, (int(sx+self.w/2), int(sy+self.h/2)), int(self.w/2))
+    
     def enter_exit_vehicle(self):
+        if not self.alive: return
+        if self.reload_timer > 0:
+            GAME.message("Cannot enter/exit while reloading.")
+            return
+
         if self.in_vehicle:
             v = self.in_vehicle
             v.driver = None
             self.in_vehicle = None
-            # place player next to car
             self.x = v.x + math.cos(v.angle)*(v.w + 8)
             self.y = v.y + math.sin(v.angle)*(v.h + 8)
             self.rect.topleft = (self.x - self.w//2, self.y - self.h//2)
             if SND_ENTER: SND_ENTER.play()
-            GAME.message("Exited vehicle")
+            GAME.message("EXITED VEHICLE")
             return
-        # try to enter nearby non-police car
         for v in GAME.vehicles:
-            if not v.is_police and distance((self.x,self.y),(v.x,v.y)) < 48 and v.driver is None:
+            if not v.is_police and distance((self.x,self.y),(v.x,v.y)) < 60 and v.driver is None and v.health > 0 and not v.is_exploding:
                 v.driver = self
                 self.in_vehicle = v
                 if SND_ENTER: SND_ENTER.play()
-                GAME.message("Entered vehicle")
+                GAME.message("ENTERED VEHICLE")
                 return
-        GAME.message("No vehicle nearby or vehicle is police")
+        GAME.message("NO VEHICLE NEARBY")
+        
+    def switch_weapon(self):
+        if not self.alive or self.in_vehicle: return
+        self.weapon = (self.weapon + 1) % len(WEAPONS_DATA)
+        self.reload_timer = 0 
+        GAME.message(f"WEAPON: {self.get_current_weapon_data()['name']}")
 
 # ------------------ Vehicle ------------------
 class Vehicle:
-    def __init__(self,x,y,color=CAR_COLOR,is_police=False):
+    # (Vehicle class remains the same)
+    def __init__(self,x,y,color=CAR_IMG.get_at((1,1)),is_police=False):
         self.x=x; self.y=y
         self.w=56; self.h=36
         self.angle=0
@@ -233,8 +474,42 @@ class Vehicle:
         self.driver=None
         self.is_police=is_police
         self.health=100
-        self.image = CAR_IMG
+        self.image = CAR_IMG if not is_police else POLICE_IMG
+        self.is_exploding = False 
+        self.explosion_timer = 0
+    
+    def damage(self, amount):
+        if self.health > 0:
+            self.health = max(0, self.health - amount)
+            if self.health <= 0 and not self.is_exploding:
+                self.is_exploding = True
+                self.explosion_timer = 1.0 
+                GAME.message("VEHICLE DESTROYED")
+                if SND_EXPLOSION: SND_EXPLOSION.play()
+                if self.driver and isinstance(self.driver, Player):
+                    self.driver.in_vehicle = None
+                    self.driver.x = self.x; self.driver.y = self.y
+                    self.driver.health -= 20 
+                    GAME.message("EJECTED! DAMAGE TAKEN")
+                    self.driver = None
+                elif self.driver and self.is_police:
+                    self.driver = None
+
     def update(self, dt, player=None, wanted=0):
+        if self.health <= 0:
+            if self.is_exploding:
+                self.explosion_timer -= dt
+                if self.explosion_timer <= 0:
+                    GAME.particles.add_explosion(self.x, self.y, 80, (255,100,0))
+                    if player and player.alive and distance((self.x,self.y), (player.x,player.y)) < 150:
+                         player.health = max(0, player.health - 50)
+                         GAME.message("EXPLOSION DAMAGE!")
+                    for npc in GAME.npcs:
+                         if npc.alive and distance((self.x,self.y), (npc.x,npc.y)) < 150:
+                             npc.damage(50)
+                    self.is_exploding = False
+            return 
+
         if self.driver:
             keys = pygame.key.get_pressed()
             if keys[pygame.K_w]:
@@ -249,38 +524,64 @@ class Vehicle:
             if keys[pygame.K_d]:
                 self.angle += self.turn_speed * (self.speed / max(0.1,self.max_speed)) * dt * 60
         else:
-            # AI
-            if self.is_police and wanted>0 and player:
+            if self.is_police and wanted>0 and player and player.alive and distance((self.x,self.y), (player.x,player.y)) < 800:
                 dx = player.x - self.x; dy = player.y - self.y
+                d = math.hypot(dx,dy) or 1
                 ang = math.atan2(dy, dx)
                 diff = ((ang - self.angle + math.pi) % (2*math.pi)) - math.pi
                 self.angle += clamp(diff, -0.05, 0.05)
                 self.speed = clamp(self.speed + 0.06, -self.max_speed/2, self.max_speed)
             else:
-                # idle drift
                 if random.random() < 0.002: self.angle += random.uniform(-0.4,0.4)
                 self.speed *= 0.995
+        
         self.x += math.cos(self.angle) * self.speed
         self.y += math.sin(self.angle) * self.speed
-        # collision with buildings: simple push back
+        
         rect = pygame.Rect(self.x - self.w/2, self.y - self.h/2, self.w, self.h)
         if GAME.world.collides_building(rect):
-            # push back
             self.x -= math.cos(self.angle) * self.speed * 2
             self.y -= math.sin(self.angle) * self.speed * 2
             self.speed = 0
+            if abs(self.speed) > 2.0:
+                 self.damage(5)
+
         self.x = clamp(self.x, 0, MAP_W); self.y = clamp(self.y, 0, MAP_H)
+
     def draw(self, surf, cam):
         sx,sy = cam.to_screen((self.x - self.w/2, self.y - self.h/2))
-        try:
-            rotated = pygame.transform.rotate(self.image, -math.degrees(self.angle))
-            r = rotated.get_rect(center=(sx + self.w/2, sy + self.h/2))
-            surf.blit(rotated, r.topleft)
-        except:
-            s = pygame.Surface((self.w,self.h), pygame.SRCALPHA)
-            pygame.draw.rect(s, self.color, (0,0,self.w,self.h))
-            surf.blit(s, (sx,sy))
+        
+        current_image = self.image
+        if self.health < 50:
+            damage_surf = pygame.Surface((self.w, self.h), pygame.SRCALPHA)
+            alpha = 200 - self.health * 2 
+            damage_surf.fill((255, 0, 0, clamp(alpha, 0, 200))) 
+            
+            temp_img = current_image.copy()
+            temp_img.blit(damage_surf, (0, 0))
+            current_image = temp_img
 
+        if self.health > 0:
+            try:
+                rotated = pygame.transform.rotate(current_image, -math.degrees(self.angle))
+                r = rotated.get_rect(center=(sx + self.w/2, sy + self.h/2))
+                surf.blit(rotated, r.topleft)
+            except:
+                s = pygame.Surface((self.w,self.h), pygame.SRCALPHA)
+                pygame.draw.rect(s, self.color, (0,0,self.w,self.h))
+                surf.blit(s, (sx,sy))
+        
+        if self.is_exploding:
+            explosion_scale = 1.0 + (1.0 - self.explosion_timer) * 2
+            exp_w = int(EXPLOSION_IMG.get_width() * explosion_scale)
+            exp_h = int(EXPLOSION_IMG.get_height() * explosion_scale)
+            exp_img = pygame.transform.scale(EXPLOSION_IMG, (exp_w, exp_h))
+            
+            exp_sx = int(sx + self.w/2 - exp_w/2)
+            exp_sy = int(sy + self.h/2 - exp_h/2)
+            surf.blit(exp_img, (exp_sx, exp_sy))
+            
+            
 # ------------------ NPC (peatones / policía a pie) ------------------
 class NPC:
     def __init__(self,x,y,police=False):
@@ -288,14 +589,28 @@ class NPC:
         self.w=14; self.h=18
         self.police = police
         self.alive = True
+        self.health = 100
         self.vx=random.uniform(-1.2,1.2); self.vy=random.uniform(-1.2,1.2)
         self.speed = 1.2 if not police else 1.6
+    
+    def damage(self, amount):
+        if self.health > 0:
+            self.health = max(0, self.health - amount)
+            if self.health <= 0:
+                self.alive = False
+                if not self.police: 
+                    GAME.player.money += 15
+                    GAME.wanted = clamp(GAME.wanted + 0.02, 0, MAX_WANTED) 
+                    if SND_WANTED: SND_WANTED.play()
+
     def update(self, dt, player=None, wanted=0):
         if not self.alive: return
-        if self.police and wanted>0 and player:
+        if self.police and wanted>0 and player and player.alive:
             dx = player.x - self.x; dy = player.y - self.y
             d = math.hypot(dx,dy) or 1
-            self.vx = (dx/d) * 1.6 * (1 + wanted*0.1); self.vy = (dy/d) * 1.6 * (1 + wanted*0.1)
+            self.vx = (dx/d) * self.speed * (1 + wanted*0.1); self.vy = (dy/d) * self.speed * (1 + wanted*0.1)
+            if distance((self.x, self.y), (player.x, player.y)) < 30 and player.in_vehicle is None:
+                player.health = max(0, player.health - 0.5)
         else:
             if random.random() < 0.02:
                 self.vx = random.uniform(-1.2,1.2); self.vy = random.uniform(-1.2,1.2)
@@ -304,11 +619,19 @@ class NPC:
         rect = pygame.Rect(nx - self.w/2, ny - self.h/2, self.w, self.h)
         if not GAME.world.collides_building(rect):
             self.x = clamp(nx, 5, MAP_W-5); self.y = clamp(ny, 5, MAP_H-5)
+        else:
+            self.vx = -self.vx; self.vy = -self.vy
+            
     def draw(self, surf, cam):
         if not self.alive: return
         sx,sy = cam.to_screen((self.x - self.w/2, self.y - self.h/2))
-        color = POLICE_COLOR if self.police else (200,180,80)
+        color = POLICE_COLOR if self.police else (255, 255, 50) # Peatones amarillos neón
         pygame.draw.rect(surf, color, (sx,sy,self.w,self.h))
+        # Simple health bar for police
+        if self.police and self.health < 100:
+             bar_w = int(self.w * (self.health / 100))
+             pygame.draw.rect(surf, (200,50,50), (sx, sy - 5, self.w, 3))
+             pygame.draw.rect(surf, (50,200,50), (sx, sy - 5, bar_w, 3))
 
 # ------------------ Bullet ------------------
 class Bullet:
@@ -324,26 +647,70 @@ class Bullet:
         try:
             surf.blit(self.image, (sx,sy))
         except:
-            pygame.draw.circle(surf, BULLET_COLOR, (int(sx+4), int(sy+4)), 3)
+            pygame.draw.circle(surf, BULLET_IMG.get_at((1,1)), (int(sx+4), int(sy+4)), 3)
+
+# ------------------ Partículas (para explosiones/golpes) ------------------
+class Particle:
+    def __init__(self, x, y, color, size, lifetime, vx, vy):
+        self.x, self.y = x, y
+        self.color = color
+        self.size = size
+        self.lifetime = lifetime
+        self.vx, self.vy = vx, vy
+
+    def update(self, dt):
+        self.x += self.vx; self.y += self.vy; self.lifetime -= dt
+        self.size = max(0, self.size - 0.1 * dt)
+
+    def draw(self, surf, cam):
+        sx, sy = cam.to_screen((self.x, self.y))
+        pygame.draw.circle(surf, self.color, (int(sx), int(sy)), int(self.size))
+
+class ParticleSystem:
+    def __init__(self):
+        self.particles = []
+
+    def add_explosion(self, x, y, count, color):
+        for _ in range(count):
+            angle = random.uniform(0, 2 * math.pi)
+            speed = random.uniform(2, 8)
+            vx = math.cos(angle) * speed
+            vy = math.sin(angle) * speed
+            p = Particle(x, y, color, random.uniform(3, 8), random.uniform(0.5, 1.5), vx, vy)
+            self.particles.append(p)
+
+    def update(self, dt):
+        self.particles = [p for p in self.particles if p.lifetime > 0 and p.size > 0]
+        for p in self.particles:
+            p.update(dt)
+
+    def draw(self, surf, cam):
+        for p in self.particles:
+            p.draw(surf, cam)
 
 # ------------------ Mission ------------------
 class Mission:
     def __init__(self):
         self.active = False; self.target = None; self.target_pos = None; self.reward = 0
     def start_steal(self):
-        candidates = [v for v in GAME.vehicles if not v.is_police and v.driver is None]
+        candidates = [v for v in GAME.vehicles if not v.is_police and v.driver is None and v.health > 0]
         if not candidates: return
         car = random.choice(candidates)
         self.active = True; self.target = car
         self.target_pos = (random.randint(200, MAP_W-200), random.randint(200, MAP_H-200))
         self.reward = 200 + random.randint(0,400)
-        GAME.message("Mission: steal the car and deliver")
+        GAME.message("MISSION: STEAL CAR AND DELIVER")
     def update(self, dt):
         if not self.active or not self.target: return
+        if self.target.health <= 0:
+            GAME.message("MISSION FAILED: TARGET DESTROYED")
+            self.active = False; self.target = None
+            return
+        
         if GAME.player.in_vehicle == self.target and distance((GAME.player.x,GAME.player.y), self.target_pos) < 50:
             GAME.player.money += self.reward
             self.active = False; self.target = None
-            GAME.message(f"Mission complete! ${self.reward}")
+            GAME.message(f"MISSION COMPLETE! ${self.reward}")
 
 # ------------------ Game ------------------
 class Game:
@@ -356,211 +723,357 @@ class Game:
             self.vehicles.append(Vehicle(x,y))
         for _ in range(NUM_POLICE_CARS):
             x=random.randint(50,MAP_W-50); y=random.randint(50,MAP_H-50)
-            self.vehicles.append(Vehicle(x,y,color=POLICE_COLOR,is_police=True))
+            self.vehicles.append(Vehicle(x,y,is_police=True))
         self.npcs = []
         for _ in range(NUM_NPCS):
             x=random.randint(20,MAP_W-20); y=random.randint(20,MAP_H-20); self.npcs.append(NPC(x,y, police=False))
         for _ in range(NUM_POLICE_PEOPLE):
             x=random.randint(20,MAP_W-20); y=random.randint(20,MAP_H-20); self.npcs.append(NPC(x,y, police=True))
+            
         self.bullets = []
         self.wanted = 0
         self.minimap = True
         self.mission = Mission()
         self.message_queue = deque()
         self.last_reinforce = time.time()
-        self.time = 0.0
+        self.time = 0.0 
+        self.particles = ParticleSystem()
+        
     def message(self, txt, ttl=3.0):
         self.message_queue.appendleft([txt, ttl])
+    
     def save(self, filename="savegame.json"):
-        data = {'player': {'x':self.player.x,'y':self.player.y,'health':self.player.health,'money':self.player.money,'ammo':self.player.ammo,'weapon':self.player.weapon}, 'wanted': self.wanted}
+        # (Save/Load methods remain the same)
+        data = {
+            'player': {
+                'x':self.player.x,'y':self.player.y,'health':self.player.health,
+                'money':self.player.money,'weapon':self.player.weapon,
+                'ammo_in_mag': self.player.ammo_in_mag, 
+                'ammo_total': self.player.ammo_total
+            }, 
+            'wanted': self.wanted
+        }
         try:
             with open(filename,'w') as f: json.dump(data,f)
-            self.message("Game saved")
+            self.message("GAME SAVED")
         except Exception as e:
-            self.message(f"Save failed: {e}")
+            self.message(f"SAVE FAILED: {e}")
+            
     def load(self, filename="savegame.json"):
-        if not os.path.exists(filename): self.message("No save file"); return
+        if not os.path.exists(filename): self.message("NO SAVE FILE"); return
         try:
             with open(filename,'r') as f: data=json.load(f)
             p=data.get('player',{})
             self.player.x = p.get('x', self.player.x); self.player.y = p.get('y', self.player.y)
             self.player.health = p.get('health', self.player.health); self.player.money = p.get('money', self.player.money)
-            self.player.ammo = p.get('ammo', self.player.ammo); self.player.weapon = p.get('weapon', self.player.weapon)
+            self.player.weapon = p.get('weapon', self.player.weapon)
+            self.player.ammo_in_mag = p.get('ammo_in_mag', self.player.ammo_in_mag)
+            self.player.ammo_total = p.get('ammo_total', self.player.ammo_total)
+            self.player.alive = self.player.health > 0
+            self.player.in_vehicle = None 
+            
             self.wanted = data.get('wanted', self.wanted)
-            self.message("Game loaded")
+            self.message("GAME LOADED")
         except Exception as e:
-            self.message(f"Load failed: {e}")
+            self.message(f"LOAD FAILED: {e}")
+    
     def fire(self):
-        if self.player.fire_cooldown > 0: return
+        if not self.player.alive or self.player.in_vehicle: return
+        if self.player.fire_cooldown > 0 or self.player.reload_timer > 0: return
+        
         w = self.player.weapon
-        if self.player.ammo[w] <= 0:
-            self.message("No ammo")
+        w_data = WEAPONS_DATA[w]
+        
+        if self.player.ammo_in_mag[w] <= 0:
+            self.message("OUT OF AMMO. PRESS R TO RELOAD.")
             return
+            
         mx,my = pygame.mouse.get_pos()
         world_mouse = (mx + camera.x, my + camera.y)
         ang = math.atan2(world_mouse[1] - self.player.y, world_mouse[0] - self.player.x)
-        if w == 0:
-            b = Bullet(self.player.x + math.cos(ang)*24, self.player.y + math.sin(ang)*24, ang, 'player', speed=18, life=120, damage=35)
-            self.bullets.append(b); self.player.ammo[w] -= 1; self.player.fire_cooldown = 0.18
-        else:
+        
+        if w == 0: # Pistol
+            b = Bullet(self.player.x + math.cos(ang)*24, self.player.y + math.sin(ang)*24, ang, 'player', speed=18, life=120, damage=w_data["damage"])
+            self.bullets.append(b); self.player.ammo_in_mag[w] -= 1; self.player.fire_cooldown = w_data["cooldown"]
+        else: # Shotgun
             for _ in range(6):
                 spread = random.uniform(-0.35,0.35); a = ang + spread
-                b = Bullet(self.player.x + math.cos(a)*24, self.player.y + math.sin(a)*24, a, 'player', speed=15, life=80, damage=18)
+                b = Bullet(self.player.x + math.cos(a)*24, self.player.y + math.sin(a)*24, a, 'player', speed=15, life=80, damage=w_data["damage"])
                 self.bullets.append(b)
-            self.player.ammo[w] -= 1; self.player.fire_cooldown = 0.9
+            self.player.ammo_in_mag[w] -= 1; self.player.fire_cooldown = w_data["cooldown"]
+        
+        self.particles.add_explosion(self.player.x + math.cos(ang)*24, self.player.y + math.sin(ang)*24, 2, (100,100,100))
+            
         if SND_SHOOT: SND_SHOOT.play()
-        self.wanted = clamp(self.wanted + 1, 0, MAX_WANTED)
-        if SND_WANTED: SND_WANTED.play()
+        self.wanted = clamp(self.wanted + 0.02, 0, MAX_WANTED) 
+        if SND_WANTED and self.wanted > 0.95 and self.wanted < 1.05: SND_WANTED.play()
+        
     def try_enter_exit(self):
         self.player.enter_exit_vehicle()
+
     def update(self, dt):
         keys = pygame.key.get_pressed()
         mx,my = pygame.mouse.get_pos()
         world_mouse = (mx + camera.x, my + camera.y)
-        self.time += dt
-        # player aim angle
-        self.player.angle = math.atan2(world_mouse[1] - self.player.y, world_mouse[0] - self.player.x)
-        # update
-        if self.player.in_vehicle:
-            # vehicle controlled
-            self.player.in_vehicle.update(dt, player=self.player, wanted=self.wanted)
-            self.player.x, self.player.y = self.player.in_vehicle.x, self.player.in_vehicle.y
-        else:
-            self.player.update(keys, dt)
-        # vehicles
-        for v in list(self.vehicles):
-            if v != self.player.in_vehicle:
-                v.update(dt, player=self.player, wanted=self.wanted)
-        # npcs
+        
+        self.time += dt * 0.5 
+
+        if self.player.alive:
+            self.player.fire_cooldown = max(0, self.player.fire_cooldown - dt)
+            if self.player.reload_timer <= 0:
+                self.player.angle = math.atan2(world_mouse[1] - self.player.y, world_mouse[0] - self.player.x)
+            
+            if self.player.in_vehicle:
+                self.player.in_vehicle.update(dt, player=self.player, wanted=self.wanted)
+                self.player.x, self.player.y = self.player.in_vehicle.x, self.player.in_vehicle.y
+            else:
+                self.player.update(keys, dt)
+        
+        self.vehicles = [v for v in self.vehicles if v.health > 0 or v.is_exploding]
+
+        for v in self.vehicles:
+            v.update(dt, player=self.player, wanted=self.wanted)
         for n in self.npcs:
             n.update(dt, player=self.player, wanted=self.wanted)
-        # bullets
+        
+        self.npcs = [n for n in self.npcs if n.alive]
+        
         for b in list(self.bullets):
             b.update(dt)
             if b.life <= 0 or b.x < 0 or b.x > MAP_W or b.y < 0 or b.y > MAP_H:
                 try: self.bullets.remove(b)
                 except: pass; continue
-            # hit NPCs
+            
+            hit = False
             for npc in self.npcs:
                 if npc.alive and abs(b.x - npc.x) < 12 and abs(b.y - npc.y) < 12:
-                    npc.alive = False
-                    try: self.bullets.remove(b)
-                    except: pass
-                    if not npc.police: self.wanted = clamp(self.wanted + 1, 0, MAX_WANTED)
-                    break
-            # hit vehicles
-            for v in self.vehicles:
-                if abs(b.x - v.x) < max(v.w,v.h)/2 + 8 and abs(b.y - v.y) < max(v.w,v.h)/2 + 8:
-                    v.health -= b.damage
-                    try: self.bullets.remove(b)
-                    except: pass
-                    if v.driver and isinstance(v.driver, Player):
-                        v.driver.health -= b.damage * 0.6
-                    break
-        # police reinforcements based on wanted
-        if self.wanted > 0 and time.time() - self.last_reinforce > max(3, 12 - self.wanted*2):
-            side = random.choice(['top','bottom','left','right'])
-            if side=='top': x=random.randint(50,MAP_W-50); y=10
-            elif side=='bottom': x=random.randint(50,MAP_W-50); y=MAP_H-10
-            elif side=='left': x=10; y=random.randint(50,MAP_H-50)
-            else: x=MAP_W-10; y=random.randint(50,MAP_H-50)
-            pc = Vehicle(x,y,color=POLICE_COLOR,is_police=True); self.vehicles.append(pc)
-            self.last_reinforce = time.time(); self.message("Police reinforcement arrived")
-        # wanted decay slowly
-        if self.wanted > 0 and int(self.time) % 6 == 0:
-            self.wanted = clamp(self.wanted - 0.0008, 0, MAX_WANTED)
-        # mission
+                    npc.damage(b.damage)
+                    hit = True; break
+            
+            if not hit:
+                for v in self.vehicles:
+                    if v.health > 0 and abs(b.x - v.x) < max(v.w,v.h)/2 + 8 and abs(b.y - v.y) < max(v.w,v.h)/2 + 8:
+                        v.damage(b.damage)
+                        hit = True; break
+            
+            if hit:
+                self.particles.add_explosion(b.x, b.y, 5, (200, 200, 200))
+                try: self.bullets.remove(b)
+                except: pass
+
+        if self.wanted > 0 and self.player.in_vehicle is None and not any(n.police for n in self.npcs):
+            self.wanted = max(0, self.wanted - dt * 0.1) 
+            
+        if self.wanted >= 1 and time.time() - self.last_reinforce > 30 / self.wanted:
+            px,py = self.player.x, self.player.y
+            sx,sy = px + random.uniform(500,1000) * random.choice([-1,1]), py + random.uniform(500,1000) * random.choice([-1,1])
+            self.vehicles.append(Vehicle(sx, sy, is_police=True))
+            self.npcs.append(NPC(sx+10, sy+10, police=True))
+            self.last_reinforce = time.time()
+            self.message("POLICE REINFORCEMENTS ARRIVED")
+        
+        self.message_queue = deque([[txt, ttl - dt] for txt, ttl in self.message_queue if ttl > 0])
         self.mission.update(dt)
-        # camera
-        target = self.player.in_vehicle if self.player.in_vehicle else self.player
-        camera.update(target)
-        # messages TTL
-        if self.message_queue:
-            for i in range(len(self.message_queue)-1, -1, -1):
-                item = self.message_queue[i]
-                item[1] -= dt
-                if item[1] <= 0:
-                    try: self.message_queue.pop()
-                    except: pass
-    def draw_hud(self, surf):
-        # health
-        pygame.draw.rect(surf, (0,0,0), (14, HEIGHT-44, 272, 34))
-        pygame.draw.rect(surf, (200,0,0), (18, HEIGHT-40, clamp(self.player.health,0,100)/100*264, 26))
-        surf.blit(FONT.render(f'HP: {int(self.player.health)}', True, WHITE), (20, HEIGHT-40))
-        # ammo and money
-        surf.blit(FONT.render(f'Ammo: {self.player.ammo[self.player.weapon]}', True, WHITE), (20, 10))
-        surf.blit(FONT.render(f'Money: ${self.player.money}', True, WHITE), (20, 30))
-        # wanted (stars)
-        for i in range(int(self.wanted)):
-            pygame.draw.polygon(surf, (255,215,0), [(WIDTH-20 - i*30, 14), (WIDTH-8 - i*30, 30), (WIDTH-32 - i*30, 30)])
-        # mission
-        if self.mission.active:
-            surf.blit(FONT.render('Mission active - deliver car', True, WHITE), (WIDTH//2 - 120, 10))
-    def draw_minimap(self, surf):
-        if not self.minimap: return
-        mw,mh = 220,140; sx=WIDTH-mw-12; sy=HEIGHT-mh-12
-        mini = pygame.Surface((mw,mh)); mini.fill((20,80,30))
-        for r in self.world.roads:
-            rx = int(r.x / MAP_W * mw); ry = int(r.y / MAP_H * mh); rw = int(max(2, r.w / MAP_W * mw)); rh = int(max(2, r.h / MAP_H * mh))
-            pygame.draw.rect(mini, ROAD, (rx,ry,rw,rh))
-        for v in self.vehicles:
-            vx = int(v.x / MAP_W * mw); vy = int(v.y / MAP_H * mh); color = POLICE_COLOR if v.is_police else CAR_COLOR
-            pygame.draw.circle(mini, color, (vx, vy), 2)
-        px = int(self.player.x / MAP_W * mw); py = int(self.player.y / MAP_H * mh); pygame.draw.circle(mini, PLAYER_COLOR, (px, py), 3)
-        surf.blit(mini, (sx, sy))
+        self.particles.update(dt)
+        
+        cam_target = self.player.in_vehicle if self.player.in_vehicle else self.player
+        camera.update(cam_target)
+
+
     def draw(self, surf):
         self.world.draw(surf, camera)
-        for v in self.vehicles: v.draw(surf, camera)
-        for n in self.npcs: n.draw(surf, camera)
-        for b in self.bullets: b.draw(surf, camera)
-        if self.player.in_vehicle: self.player.in_vehicle.draw(surf, camera)
-        else: self.player.draw(surf, camera)
+
+        if self.mission.active and self.mission.target_pos:
+            sx, sy = camera.to_screen(self.mission.target_pos)
+            # Objetivo de misión como un círculo amarillo neón parpadeante
+            pulse_radius = 25 + math.sin(self.time * 10) * 5
+            pygame.draw.circle(surf, HUD_TEXT_COLOR, (int(sx), int(sy)), int(pulse_radius), 5)
+
+
+        for n in self.npcs:
+            n.draw(surf, camera)
+            
+        for v in self.vehicles:
+            v.draw(surf, camera)
+
+        if self.player.in_vehicle is None:
+            self.player.draw(surf, camera)
+            
+        for b in self.bullets:
+            b.draw(surf, camera)
+
+        self.particles.draw(surf, camera)
+        
+        # Oscurecimiento (se mantiene el efecto para ambientación)
+        day_time = (self.time % 24)
+        darkness = 0
+        if 18 <= day_time <= 24: darkness = int(180 * (day_time - 18) / 6) # Menos oscuro para contraste
+        elif 0 <= day_time <= 6: darkness = int(180 * (6 - day_time) / 6)
+        
+        darkness = clamp(darkness, 0, 180) 
+        
+        if darkness > 0:
+            dark_overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+            dark_overlay.fill((0, 0, 0, darkness))
+            surf.blit(dark_overlay, (0, 0))
+
         self.draw_hud(surf)
-        self.draw_minimap(surf)
-        # messages
-        if self.message_queue:
-            msg,ttl = self.message_queue[0]
-            surf.blit(BIG.render(msg, True, WHITE), (WIDTH//2 - 260, HEIGHT-72))
+        
+        if self.minimap:
+            self.draw_minimap(surf)
 
-# ------------------ Inicializar juego ------------------
-GAME = Game()
-GAME.message("Welcome! Q: mission | E enter | K save | L load", 4.0)
+    def draw_hud(self, surf):
+        # Fondo para el HUD (barra negra)
+        pygame.draw.rect(surf, BLACK, (0, 0, WIDTH, 70))
+        pygame.draw.line(surf, (30,30,30), (0, 70), (WIDTH, 70), 2)
+        
+        # 1. Health Bar (Izquierda)
+        health_color = HUD_WANTED_COLOR if self.player.health < 30 else HUD_MONEY_COLOR
+        health_txt = BIG.render("ARMOR", True, HUD_TEXT_COLOR)
+        surf.blit(health_txt, (10, 5))
+        
+        # Barra de vida
+        bar_w = 150
+        pygame.draw.rect(surf, BLACK, (10, 35, bar_w, 25))
+        pygame.draw.rect(surf, health_color, (12, 37, (bar_w-4) * (self.player.health / 100), 21))
+        pygame.draw.rect(surf, HUD_TEXT_COLOR, (10, 35, bar_w, 25), 2)
+        
+        # 2. Money & Wanted Level (Derecha)
+        
+        # Nivel de Búsqueda (Estrellas)
+        wanted_text = "WANTED LEVEL: " + ("*" * int(self.wanted))
+        wanted_txt = BIG.render(wanted_text, True, HUD_WANTED_COLOR)
+        surf.blit(wanted_txt, (WIDTH - wanted_txt.get_width() - 10, 5))
 
-# ------------------ Loop principal ------------------
-mouse_held=False; hold_timer=0
-running=True
-while running:
-    dt = CLOCK.tick(60) / 1000.0
-    GAME.player.fire_cooldown = max(0, GAME.player.fire_cooldown - dt)
+        # Dinero
+        money_txt = BIG.render(f"CREDIT: ${self.player.money:,.0f}", True, HUD_MONEY_COLOR)
+        surf.blit(money_txt, (WIDTH - money_txt.get_width() - 10, 35))
+
+        # 3. Weapon Info (Centro)
+        w = self.player.weapon
+        w_data = WEAPONS_DATA[w]
+        
+        ammo_in_mag = self.player.ammo_in_mag[w]
+        ammo_total = self.player.ammo_total[w]
+        
+        weapon_text = w_data['name']
+        ammo_text = f"{ammo_in_mag} / {ammo_total}"
+
+        weapon_surf = BIG.render(weapon_text, True, HUD_TEXT_COLOR)
+        ammo_surf = BIG.render(ammo_text, True, HUD_TEXT_COLOR)
+        
+        center_x = WIDTH // 2
+        surf.blit(weapon_surf, (center_x - weapon_surf.get_width() // 2, 5))
+        surf.blit(ammo_surf, (center_x - ammo_surf.get_width() // 2, 35))
+
+        if self.player.reload_timer > 0:
+            reload_txt = BIG.render("RELOADING", True, (255, 100, 0))
+            surf.blit(reload_txt, (center_x - reload_txt.get_width() // 2, 60))
+        
+        # 4. Messages (Parte inferior central)
+        for i, (txt, ttl) in enumerate(self.message_queue):
+            msg_surf = FONT.render(txt, True, HUD_TEXT_COLOR)
+            x_pos = WIDTH // 2 - msg_surf.get_width() // 2
+            y_pos = HEIGHT - 30 - i * 25
+            surf.blit(msg_surf, (x_pos, y_pos))
+
+    def draw_minimap(self, surf):
+        map_size = 180; map_x = WIDTH - map_size - 10; map_y = HEIGHT - map_size - 10
+        ratio = map_size / MAP_W
+        
+        map_surf = pygame.Surface((map_size, map_size))
+        map_surf.fill(BLACK) # Fondo negro para el minimapa (estilo radar)
+        
+        # Roads (líneas grises muy delgadas)
+        for r in self.world.roads:
+            rx,ry,rw,rh = r.x * ratio, r.y * ratio, r.w * ratio, r.h * ratio
+            pygame.draw.rect(map_surf, (50, 50, 50), (rx, ry, rw, rh))
+            
+        # Buildings (ligeramente más claros)
+        for b_data in self.world.buildings:
+            b = b_data['rect']
+            bx,by,bw,bh = b.x * ratio, b.y * ratio, b.w * ratio, b.h * ratio
+            color = tuple(min(255, c + 30) for c in b_data['color'])
+            pygame.draw.rect(map_surf, color, (bx, by, bw, bh))
+
+
+        # Player (punto brillante)
+        px, py = self.player.x * ratio, self.player.y * ratio
+        pygame.draw.circle(map_surf, HUD_MONEY_COLOR, (int(px), int(py)), 3)
+        
+        # NPCs (police in red)
+        for n in self.npcs:
+            nx, ny = n.x * ratio, n.y * ratio
+            color = HUD_WANTED_COLOR if n.police else HUD_TEXT_COLOR
+            pygame.draw.circle(map_surf, color, (int(nx), int(ny)), 2)
+            
+        # Vehicles (puntos)
+        for v in self.vehicles:
+            vx, vy = v.x * ratio, v.y * ratio
+            color = (0, 0, 255) if v.is_police else (255, 50, 50)
+            if v.driver == self.player: color = HUD_MONEY_COLOR 
+            pygame.draw.rect(map_surf, color, (int(vx-2), int(vy-2), 4, 4))
+            
+        # Target (green pulse)
+        if self.mission.active and self.mission.target_pos:
+            tx, ty = self.mission.target_pos[0] * ratio, self.mission.target_pos[1] * ratio
+            pulse_radius = 5 + math.sin(self.time * 10) * 2
+            pygame.draw.circle(map_surf, HUD_MONEY_COLOR, (int(tx), int(ty)), int(pulse_radius), 1)
+
+        # Draw map onto screen with a thick border (GTA 2 style)
+        pygame.draw.rect(surf, HUD_TEXT_COLOR, (map_x - 5, map_y - 5, map_size + 10, map_size + 10), 3)
+        surf.blit(map_surf, (map_x, map_y))
+
+
+# ------------------ Main Loop ------------------
+def handle_input():
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
-            running=False
-        elif event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_ESCAPE: running=False
-            elif event.key == pygame.K_r: GAME = Game(); GAME.message("Reset game",2.0)
-            elif event.key == pygame.K_e: GAME.try_enter_exit()
-            elif event.key == pygame.K_1: GAME.player.weapon = 0
-            elif event.key == pygame.K_2: GAME.player.weapon = 1
-            elif event.key == pygame.K_m: GAME.minimap = not GAME.minimap
-            elif event.key == pygame.K_k: GAME.save()
-            elif event.key == pygame.K_l: GAME.load()
-            elif event.key == pygame.K_q and not GAME.mission.active: GAME.mission.start_steal()
-        elif event.type == pygame.MOUSEBUTTONDOWN:
-            if event.button == 1:
-                mouse_held=True; GAME.fire()
-        elif event.type == pygame.MOUSEBUTTONUP:
-            if event.button == 1:
-                mouse_held=False
-    if mouse_held:
-        hold_timer += dt
-        if GAME.player.weapon == 0 and hold_timer > 0.14:
-            GAME.fire(); hold_timer=0
-    else:
-        hold_timer = 0
-    GAME.update(dt)
-    GAME.draw(SCREEN)
-    pygame.display.flip()
+            return False
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1: # Left click
+                GAME.fire()
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_f:
+                GAME.try_enter_exit()
+            elif event.key == pygame.K_s and pygame.key.get_mods() & pygame.KMOD_CTRL:
+                GAME.save()
+            elif event.key == pygame.K_l and pygame.key.get_mods() & pygame.KMOD_CTRL:
+                GAME.load()
+            elif event.key == pygame.K_m:
+                GAME.minimap = not GAME.minimap
+            elif event.key == pygame.K_ESCAPE:
+                return False
+            elif event.key == pygame.K_p:
+                GAME.mission.start_steal()
+            elif event.key == pygame.K_r: # R for Reload
+                GAME.player.start_reload()
+            elif event.key == pygame.K_t: # T for Treatment/Heal
+                GAME.player.heal()
+            elif event.key == pygame.K_q: # Q for Switch Weapon
+                GAME.player.switch_weapon()
+            elif event.key == pygame.K_l and not GAME.player.alive:
+                GAME.load() 
+                if not GAME.player.alive: 
+                    GAME.__init__()
+                    GAME.player.x = MAP_W//2; GAME.player.y = MAP_H//2
+                    GAME.player.health = 100
+                    GAME.player.alive = True
+                
+    return True
+
+GAME = Game()
+RUNNING = True
+while RUNNING:
+    DT = CLOCK.tick(60) / 1000.0 
+    
+    RUNNING = handle_input()
+    
+    if RUNNING:
+        GAME.update(DT)
+        GAME.draw(SCREEN)
+        
+        pygame.display.flip()
 
 pygame.quit()
 sys.exit()
-a
